@@ -1,19 +1,10 @@
-# requirements-light.txt - Optimized for Render (CPU only)
-# Reduces build time and disk usage
-
-# Core web frameworks
+# requirements.txt - Fixed dependencies for Render
 gradio==4.44.0
 flask==3.0.0
-gunicorn==21.2.0
-
-# Environment & utilities
 python-dotenv==1.0.0
-requests==2.31.0
-
-# PDF processing
 pypdf==3.17.4
 
-# LangChain (essential only)
+# LangChain - compatible versions
 langchain==0.1.0
 langchain-community==0.0.13
 langchain-text-splitters==0.0.1
@@ -23,20 +14,22 @@ langchain-huggingface==0.0.1
 # Vector database
 faiss-cpu==1.7.4
 
-# Embeddings (lighter version)
-sentence-transformers==2.3.1
+# Embeddings - UPDATED to match langchain-huggingface requirement
+sentence-transformers>=2.6.0
 
 # Google OAuth
 google-auth==2.25.2
 google-auth-oauthlib==1.2.0
 google-auth-httplib2==0.2.0
 
-# ML/AI (CPU-optimized)
-numpy==1.24.3  # Older, lighter version
+# Core dependencies
+requests==2.31.0
+numpy==1.26.3
 transformers==4.36.2
 
-# PyTorch CPU-only (much smaller!)
+# PyTorch CPU-only (lighter for Render)
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch==2.1.2+cpu
 
-# Note: This will be ~1GB instead of ~3GB
+# WSGI server for production
+gunicorn==21.2.0
