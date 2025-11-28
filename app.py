@@ -1,4 +1,4 @@
-# app.py - FINAL WORKING VERSION (Render free tier approved)
+# app.py - FINAL WORKING VERSION (Fixed formatting issue)
 from fastapi import FastAPI, Request, Form, UploadFile, File, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 import os
@@ -65,33 +65,35 @@ def get_session_id(request: Request):
     return sid if sid and sid in sessions else None
 
 # === HTML TEMPLATES ===
-MAIN_APP_HTML_RAW = """
+def get_main_app_html(user_name: str, stats_html: str, answer_html: str, papers_html: str) -> str:
+    """Generate main app HTML without formatting conflicts"""
+    return f"""
 <!DOCTYPE html>
 <html>
 <head>
     <title>Adhyayan - Research Analyzer</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;900&display=swap');
-        * { font-family: 'Inter', sans-serif; box-sizing: border-box; }
-        body {
+        * {{ font-family: 'Inter', sans-serif; box-sizing: border-box; }}
+        body {{
             background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%);
             color: #f2f2f2;
             margin: 0;
             padding: 20px;
             min-height: 100vh;
-        }
-        .container { max-width: 1200px; margin: 0 auto; }
-        .header { text-align: center; padding: 20px 0; }
-        .header h1 { color: #e6d8b9; font-size: 42px; margin-bottom: 10px; }
-        .user-info { text-align: right; padding: 10px; color: #b0b0b0; }
-        .card {
+        }}
+        .container {{ max-width: 1200px; margin: 0 auto; }}
+        .header {{ text-align: center; padding: 20px 0; }}
+        .header h1 {{ color: #e6d8b9; font-size: 42px; margin-bottom: 10px; }}
+        .user-info {{ text-align: right; padding: 10px; color: #b0b0b0; }}
+        .card {{
             background: rgba(30, 30, 30, 0.8);
             padding: 25px;
             border-radius: 20px;
             border: 1px solid rgba(142, 106, 159, 0.3);
             margin: 20px 0;
-        }
-        .btn {
+        }}
+        .btn {{
             background: linear-gradient(135deg, #6b4e71, #8e6a9f);
             color: white;
             padding: 12px 28px;
@@ -99,10 +101,10 @@ MAIN_APP_HTML_RAW = """
             border: none;
             cursor: pointer;
             font-size: 16px;
-        }
-        .btn:hover { opacity: 0.9; }
-        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        input[type="file"], textarea {
+        }}
+        .btn:hover {{ opacity: 0.9; }}
+        .btn:disabled {{ opacity: 0.5; cursor: not-allowed; }}
+        input[type="file"], textarea {{
             background: rgba(20, 20, 20, 0.8);
             color: #f2f2f2;
             border: 2px solid rgba(142, 106, 159, 0.3);
@@ -110,11 +112,11 @@ MAIN_APP_HTML_RAW = """
             padding: 14px;
             width: 100%;
             margin: 10px 0;
-        }
-        .row { display: flex; gap: 20px; flex-wrap: wrap; }
-        .col { flex: 1; min-width: 300px; }
-        .loading { display: none; color: #8e6a9f; margin-top: 10px; }
-        .loading.show { display: block; }
+        }}
+        .row {{ display: flex; gap: 20px; flex-wrap: wrap; }}
+        .col {{ flex: 1; min-width: 300px; }}
+        .loading {{ display: none; color: #8e6a9f; margin-top: 10px; }}
+        .loading.show {{ display: block; }}
     </style>
 </head>
 <body>
@@ -163,27 +165,19 @@ MAIN_APP_HTML_RAW = """
         </div>
     </div>
     <script>
-        function logout() {
+        function logout() {{
             document.cookie = "session_id=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
             window.location.href = "/";
-        }
-        function showLoading(id) {
+        }}
+        function showLoading(id) {{
             document.getElementById(id).classList.add('show');
             const btn = document.getElementById(id.replace('Loading', 'Btn'));
             if (btn) btn.disabled = true;
-        }
+        }}
     </script>
 </body>
 </html>
 """
-
-# THIS IS THE ONLY FIX YOU NEED — escapes all hyphenated CSS properties
-# CORRECT — THIS FIXES IT 100%
-MAIN_APP_HTML = MAIN_APP_HTML_RAW.format_map({}) \
-    .replace("{", "{{") \
-    .replace("}", "}}") \
-    .replace("{{{{", "{") \
-    .replace("}}}}", "}")
 
 LOGIN_HTML = """
 <!DOCTYPE html>
@@ -217,28 +211,41 @@ async def home(request: Request):
     return RedirectResponse("/app") if get_session_id(request) else HTMLResponse(LOGIN_HTML)
 
 @app.get("/login")
-async def login(): return RedirectResponse(get_google_login_url())
+async def login(): 
+    return RedirectResponse(get_google_login_url())
 
 @app.get("/callback")
 async def callback(request: Request, code: str = None):
-    if not code: raise HTTPException(400, "No code")
+    if not code: 
+        raise HTTPException(status_code=400, detail="No code provided")
+    
     user_info = verify_google_token(code)
-    if not user_info: raise HTTPException(400, "Invalid token")
+    if not user_info: 
+        raise HTTPException(status_code=400, detail="Invalid token")
+    
     sid = str(uuid.uuid4())
     sessions[sid] = user_info
     uploaded_files_state[sid] = []
     doc_stats[sid] = {}
+    
     resp = RedirectResponse("/app")
-    resp.set_cookie("session_id", sid, httponly=True)
+    resp.set_cookie(key="session_id", value=sid, httponly=True)
     return resp
 
 @app.get("/app")
 async def main_app(request: Request):
     sid = get_session_id(request)
-    if not sid: return RedirectResponse("/")
+    if not sid: 
+        return RedirectResponse("/")
+    
     user = sessions[sid]
-    stats = f"<p>{len(uploaded_files_state[sid])} documents uploaded</p>" if uploaded_files_state[sid] else "No documents uploaded yet"
-    html = MAIN_APP_HTML.format(
+    
+    if uploaded_files_state[sid]:
+        stats = f"<p>{len(uploaded_files_state[sid])} documents uploaded</p>"
+    else:
+        stats = "No documents uploaded yet"
+    
+    html = get_main_app_html(
         user_name=user.get("name", "User"),
         stats_html=stats,
         answer_html="<p style='color:#b0b0b0'>Your answer will appear here</p>",
@@ -249,41 +256,53 @@ async def main_app(request: Request):
 @app.post("/upload")
 async def upload_files(request: Request, files: list[UploadFile] = File(...)):
     sid = get_session_id(request)
-    if not sid: raise HTTPException(401)
+    if not sid: 
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
     for file in files:
         path = save_uploaded_file(file)
         n, pages, _, pdf_name = ingest_pdf(path)
         col_name = os.path.splitext(file.filename)[0]
         uploaded_files_state[sid].append(col_name)
         doc_stats[sid][col_name] = {"pages": pages, "chunks": n, "pdf": pdf_name}
-    return RedirectResponse("/app", 303)
+    
+    return RedirectResponse("/app", status_code=303)
 
 @app.post("/ask")
 async def ask_question(request: Request, question: str = Form(...)):
     sid = get_session_id(request)
-    if not sid: raise HTTPException(401)
+    if not sid: 
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
     if not uploaded_files_state.get(sid):
-        answer, papers = "Please upload documents first", []
+        answer = "Please upload documents first"
+        papers = []
     else:
         col = uploaded_files_state[sid][0]
         chunks = retrieve_chunks(question, col)
         answer = answer_with_context(question, chunks)
         topic = doc_stats[sid][col]["pdf"]
         papers = search_papers(topic) if topic else []
+    
     user = sessions[sid]
     stats = f"<p>{len(uploaded_files_state[sid])} documents uploaded</p>"
+    
     answer_html = f"<div style='color:#f2f2f2;line-height:1.6'>{answer}</div>"
+    
     papers_html = ""
-    for i, p in enumerate(papers[:5]):
-        papers_html += f"""
-        <div style='background:rgba(30,30,30,0.7);padding:15px;border-radius:12px;margin:10px 0;'>
-            <h4 style='color:#e6d8b9;margin-top:0'>{i+1}. {p.get('title','N/A')}</h4>
-            <a href="{p.get('link','#')}" target="_blank" style='color:#a784c0'>View Paper</a>
-            <p style='color:#d0d0d0;margin:0'>{p.get('summary','No summary')[:200]}...</p>
-        </div>"""
-    if not papers: papers_html = "<p style='color:#b0b0b0'>No related papers found.</p>"
-    html = MAIN_APP_HTML.format(
-        user_name=user.get("name","User"),
+    if papers:
+        for i, p in enumerate(papers[:5]):
+            papers_html += f"""
+            <div style='background:rgba(30,30,30,0.7);padding:15px;border-radius:12px;margin:10px 0;'>
+                <h4 style='color:#e6d8b9;margin-top:0'>{i+1}. {p.get('title','N/A')}</h4>
+                <a href="{p.get('link','#')}" target="_blank" style='color:#a784c0'>View Paper</a>
+                <p style='color:#d0d0d0;margin:0'>{p.get('summary','No summary')[:200]}...</p>
+            </div>"""
+    else:
+        papers_html = "<p style='color:#b0b0b0'>No related papers found.</p>"
+    
+    html = get_main_app_html(
+        user_name=user.get("name", "User"),
         stats_html=stats,
         answer_html=answer_html,
         papers_html=papers_html
@@ -297,9 +316,20 @@ async def logout(request: Request):
         sessions.pop(sid, None)
         uploaded_files_state.pop(sid, None)
         doc_stats.pop(sid, None)
+    
     resp = RedirectResponse("/")
     resp.delete_cookie("session_id")
     return resp
 
 @app.get("/health")
-async def health(): return {"status": "healthy"}
+async def health(): 
+    return {"status": "healthy"}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "app:app",
+        host="0.0.0.0",
+        port=PORT,
+        reload=False
+    )
