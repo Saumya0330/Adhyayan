@@ -18,37 +18,33 @@ RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL", f"http://localhost:{PORT}
 
 app = FastAPI(title="Adhyayan Research Analyzer")
 
-# CRITICAL: Load models ONCE at startup, not per request
-from sentence_transformers import SentenceTransformer
-from langchain_huggingface import HuggingFaceEmbeddings
+# @lru_cache(maxsize=1)
+# def get_embedding_model():
+#     """Singleton pattern - load model only once"""
+#     print("🔄 Loading embedding model...")
+#     model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+#     print("✅ Embedding model loaded")
+#     return model
 
-@lru_cache(maxsize=1)
-def get_embedding_model():
-    """Singleton pattern - load model only once"""
-    print("🔄 Loading embedding model...")
-    model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
-    print("✅ Embedding model loaded")
-    return model
+# @lru_cache(maxsize=1)
+# def get_langchain_embeddings():
+#     """Singleton pattern for LangChain embeddings"""
+#     print("🔄 Loading LangChain embeddings...")
+#     embeddings = HuggingFaceEmbeddings(
+#         model_name="sentence-transformers/all-MiniLM-L6-v2",
+#         model_kwargs={'device': 'cpu'},
+#         encode_kwargs={'normalize_embeddings': True}
+#     )
+#     print("✅ LangChain embeddings loaded")
+#     return embeddings
 
-@lru_cache(maxsize=1)
-def get_langchain_embeddings():
-    """Singleton pattern for LangChain embeddings"""
-    print("🔄 Loading LangChain embeddings...")
-    embeddings = HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2",
-        model_kwargs={'device': 'cpu'},
-        encode_kwargs={'normalize_embeddings': True}
-    )
-    print("✅ LangChain embeddings loaded")
-    return embeddings
-
-# Preload models at startup
-@app.on_event("startup")
-async def startup_event():
-    """Preload heavy models to avoid memory spikes"""
-    get_embedding_model()
-    get_langchain_embeddings()
-    print("✅ All models preloaded")
+# # Preload models at startup
+# @app.on_event("startup")
+# async def startup_event():
+#     """Preload heavy models to avoid memory spikes"""
+#     get_embedding_model()
+#     get_langchain_embeddings()
+#     print("✅ All models preloaded")
 
 from paper_search import search_papers
 from utils import save_uploaded_file
