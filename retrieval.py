@@ -9,8 +9,11 @@ def retrieve_chunks(question, pdf_name):
     """
     # For now, return a message about the retrieval method
     # In a real implementation, you'd retrieve relevant chunks from storage
-    return [f"Document: {pdf_name}. Using LLM-powered analysis without vector embeddings."]
-
+    return [
+        f"You are analyzing the research paper titled: {pdf_name}",
+        f"User question: {question}",
+        "Provide a clear, accurate, and well-structured answer based on the paper's content."
+    ]
 def simple_text_search(question, chunks):
     """
     Basic keyword-based search through chunks
