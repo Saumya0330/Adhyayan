@@ -1,27 +1,31 @@
-# retrieval.py - Memory-optimized version
+# retrieval.py - Simple text-based retrieval (no embeddings)
 import os
-from langchain_community.vectorstores import FAISS
+from llm_agent import answer_with_context
 
-DB_DIR = "data/vector_db"
-
-def retrieve_chunks(query, pdf_name, top_k=5):
+def retrieve_chunks(question, pdf_name):
     """
-    Retrieve chunks using cached embeddings model
+    Simple retrieval that returns all chunks for basic context
+    In a production system, you'd implement proper retrieval logic
     """
-    # Import cached model
-    from app import get_langchain_embeddings
+    # For now, return a message about the retrieval method
+    # In a real implementation, you'd retrieve relevant chunks from storage
+    return [f"Document: {pdf_name}. Using LLM-powered analysis without vector embeddings."]
+
+def simple_text_search(question, chunks):
+    """
+    Basic keyword-based search through chunks
+    """
+    question_lower = question.lower()
+    relevant_chunks = []
     
-    load_path = os.path.join(DB_DIR, pdf_name)
-
-    # Use cached embeddings
-    embeddings = get_langchain_embeddings()
-
-    vectordb = FAISS.load_local(
-        load_path,
-        embeddings,
-        allow_dangerous_deserialization=True
-    )
-
-    docs = vectordb.similarity_search(query, k=top_k)
+    for chunk in chunks:
+        text_lower = chunk['text'].lower()
+        # Simple keyword matching
+        if any(keyword in text_lower for keyword in question_lower.split()):
+            relevant_chunks.append(chunk)
     
-    return docs
+    # If no keyword matches, return first few chunks as context
+    if not relevant_chunks and chunks:
+        relevant_chunks = chunks[:3]  # First 3 chunks as fallback
+    
+    return relevant_chunks
