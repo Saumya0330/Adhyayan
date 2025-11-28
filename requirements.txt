@@ -21,7 +21,7 @@ langchain-groq
 # Embeddings (CPU-only, lightweight)
 sentence-transformers
 transformers
-torch==2.1.0+cpu -f https://download.pytorch.org/whl/torch_stable.html
+torch
 
 # Hugging Face
 huggingface-hub
