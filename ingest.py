@@ -1,9 +1,7 @@
-# ingest.py
+# ingest.py - Memory-optimized version
 import os
-import uuid
 from pypdf import PdfReader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-#from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import FAISS
 
 VECTOR_DB_DIR = "./data/vector_db"
@@ -34,47 +32,51 @@ def chunk_pages(pages):
             })
     return chunks
 
-from langchain_community.vectorstores import FAISS
-from langchain_huggingface import HuggingFaceEmbeddings
-
-DB_DIR = "data/vector_db"
-
 from llm_agent import summarize_document
-from sentence_transformers import SentenceTransformer
 
 def ingest_pdf(path):
+    """
+    Memory-optimized PDF ingestion.
+    Uses cached embedding model from app.py
+    """
+    # Import here to use cached model
+    from app import get_langchain_embeddings, get_embedding_model
+    
     pdf_name = os.path.splitext(os.path.basename(path))[0]
-    save_dir = os.path.join(DB_DIR, pdf_name)
+    save_dir = os.path.join(VECTOR_DB_DIR, pdf_name)
 
+    print(f"📄 Processing {pdf_name}...")
+    
     pages = load_pdf(path)
     chunks = chunk_pages(pages)
 
     texts = [c["text"] for c in chunks]
     metadatas = [c["metadata"] for c in chunks]
 
-    # Full document text for summary and citation extraction
+    # Full document text for summary
     full_text = "\n".join(texts)
     
     # Check document size
     from token_utils import check_pdf_size
     size_category, token_count, size_msg = check_pdf_size(full_text)
-    print(f"📄 {pdf_name}: {size_msg} ({token_count} tokens)")
+    print(f"📊 {pdf_name}: {size_msg} ({token_count} tokens)")
 
-    # LLM summary of the whole document (with chunking if needed)
-    print(f"🔄 Generating summary for {pdf_name}...")
+    # LLM summary of the whole document
+    print(f"🔄 Generating summary...")
     doc_summary = summarize_document(full_text)
-    print(f"✅ Summary generated for {pdf_name}")
+    print(f"✅ Summary generated")
     
-    # Generate document embedding for similarity search
-    print(f"🔄 Generating embeddings for {pdf_name}...")
-    embedding_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+    # Use cached embedding model
+    print(f"🔄 Generating embeddings...")
+    embedding_model = get_embedding_model()
     doc_embedding = embedding_model.encode(doc_summary)
-    print(f"✅ Embeddings generated for {pdf_name}")
+    print(f"✅ Embeddings generated")
 
-    embeddings = HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2"
-    )
+    # Use cached LangChain embeddings
+    embeddings = get_langchain_embeddings()
 
+    # Create vector store
+    print(f"🔄 Creating vector store...")
     vectordb = FAISS.from_texts(
         texts,
         embedding=embeddings,
@@ -83,7 +85,6 @@ def ingest_pdf(path):
 
     os.makedirs(save_dir, exist_ok=True)
     vectordb.save_local(save_dir)
+    print(f"✅ Vector store saved to {save_dir}")
 
-    # Return additional data: embedding and full text
     return len(texts), len(pages), doc_summary, pdf_name
-#, doc_embedding, full_text
