@@ -4,6 +4,10 @@
 gradio
 flask
 gunicorn
+fastapi
+uvicorn
+arxiv
+python-multipart
 
 # Environment & utilities
 python-dotenv
