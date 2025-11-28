@@ -1,35 +1,31 @@
-# requirements.txt - Optimized for Render's 512MB free tier
+# requirements.txt - NO VERSION CONSTRAINTS for compatibility
 
-# Core web framework (choose ONE)
+# Core web framework
 fastapi
-uvicorn
+uvicorn[standard]
 python-multipart
 
 # Environment & utilities
 python-dotenv
 requests
 
-# PDF processing (lightweight)
+# PDF processing
 pypdf
 
-# LangChain (minimal)
+# LangChain ecosystem
 langchain
 langchain-community
 langchain-text-splitters
 langchain-groq
-
-# Embeddings (CPU-only, lightweight)
-sentence-transformers
-transformers
-torch
-
-# Hugging Face
-huggingface-hub
+langchain-huggingface
 
 # Vector database (CPU-only)
 faiss-cpu
 
-# Math
+# Embeddings and ML (CPU-only)
+sentence-transformers
+transformers
+torch
 numpy
 
 # Google OAuth
@@ -37,5 +33,5 @@ google-auth
 google-auth-oauthlib
 google-auth-httplib2
 
-# Optional: if you need arxiv
+# Optional
 arxiv
