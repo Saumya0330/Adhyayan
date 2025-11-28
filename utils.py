@@ -1,17 +1,21 @@
 import os
+import shutil
 
 UPLOAD_DIR = "./data/uploads"
 
-def save_uploaded_file(file_obj):
-    # file_obj is a NamedString with .name that points to a temporary path
-    temp_path = file_obj.name
-
-    # Copy the file to your desired directory
-    save_path = f"uploaded_files/{os.path.basename(temp_path)}"
-    os.makedirs("uploaded_files", exist_ok=True)
-
-    with open(temp_path, "rb") as src, open(save_path, "wb") as dst:
-        dst.write(src.read())
-
-    return save_path
-
+def save_uploaded_file(upload_file):
+    """
+    Save uploaded file from FastAPI UploadFile object
+    """
+    # Create upload directory if it doesn't exist
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    
+    # Generate file path
+    file_path = os.path.join(UPLOAD_DIR, upload_file.filename)
+    
+    # Save the file
+    with open(file_path, "wb") as buffer:
+        # Copy the file content to the new location
+        shutil.copyfileobj(upload_file.file, buffer)
+    
+    return file_path
