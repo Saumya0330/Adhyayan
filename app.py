@@ -227,7 +227,7 @@ MAIN_APP_HTML = """
 </body>
 </html>
 """
-
+MAIN_APP_HTML = MAIN_APP_HTML.replace("font-family", "{{font-family}}")
 LOGIN_HTML = """
 <!DOCTYPE html>
 <html>
