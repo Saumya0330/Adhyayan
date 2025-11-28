@@ -2,7 +2,7 @@
 
 # Core web framework
 fastapi
-uvicorn[standard]
+uvicorn
 python-multipart
 
 # Environment & utilities
@@ -23,9 +23,6 @@ langchain-huggingface
 faiss-cpu
 
 # Embeddings and ML (CPU-only)
-sentence-transformers
-transformers
-torch
 numpy
 
 # Google OAuth
