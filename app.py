@@ -1,20 +1,22 @@
-# app.py - Fixed for Render deployment
+# app.py - Pure FastAPI without Gradio
+from fastapi import FastAPI, Request, Form, UploadFile, File, Depends, HTTPException
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 import os
-import gradio as gr
 from dotenv import load_dotenv
 import requests
+import uuid
+import uvicorn
 
 load_dotenv()
 
-# Configuration - CRITICAL FOR RENDER
-PORT = int(os.getenv("PORT", 10000))  # Render uses port 10000 internally
+PORT = int(os.getenv("PORT", 10000))
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL", f"http://localhost:{PORT}")
 
-print(f"🚀 Starting on port: {PORT}")
-print(f"🔗 External URL: {RENDER_EXTERNAL_URL}")
+app = FastAPI(title="Adhyayan Research Analyzer")
 
 from paper_search import search_papers
 from utils import save_uploaded_file
@@ -22,16 +24,17 @@ from ingest import ingest_pdf
 from retrieval import retrieve_chunks
 from llm_agent import answer_with_context
 
-# Global state
+# Storage
+sessions = {}
 uploaded_files_state = {}
 doc_stats = {}
 
-# Authentication
+# Authentication (same as above)
 def get_google_login_url():
     base_url = "https://accounts.google.com/o/oauth2/v2/auth"
     params = {
         "client_id": GOOGLE_CLIENT_ID,
-        "redirect_uri": f"{RENDER_EXTERNAL_URL}/",
+        "redirect_uri": f"{RENDER_EXTERNAL_URL}/callback",
         "response_type": "code",
         "scope": "openid email profile",
         "access_type": "offline",
@@ -48,7 +51,7 @@ def verify_google_token(code):
             "client_secret": GOOGLE_CLIENT_SECRET,
             "code": code,
             "grant_type": "authorization_code",
-            "redirect_uri": f"{RENDER_EXTERNAL_URL}/"
+            "redirect_uri": f"{RENDER_EXTERNAL_URL}/callback"
         }
         
         response = requests.post(token_url, data=data, timeout=30)
@@ -71,245 +74,294 @@ def verify_google_token(code):
         print(f"OAuth error: {e}")
         return None
 
-# App functions
-def get_session_id():
-    return "user_session"
+def get_session_id(request: Request):
+    session_id = request.cookies.get("session_id")
+    if not session_id or session_id not in sessions:
+        return None
+    return session_id
 
-def ingest_files(files):
-    session_id = get_session_id()
+# HTML Templates
+MAIN_APP_HTML = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Adhyayan - Research Analyzer</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;900&display=swap');
+        * { font-family: 'Inter', sans-serif; }
+        body {
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%);
+            color: #f2f2f2;
+            margin: 0;
+            padding: 20px;
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .header { text-align: center; padding: 20px 0; }
+        .header h1 { color: #e6d8b9; font-size: 42px; margin-bottom: 10px; }
+        .user-info { text-align: right; padding: 10px; color: #b0b0b0; }
+        .card {
+            background: rgba(30, 30, 30, 0.8);
+            padding: 25px;
+            border-radius: 20px;
+            border: 1px solid rgba(142, 106, 159, 0.3);
+            margin: 20px 0;
+        }
+        .btn {
+            background: linear-gradient(135deg, #6b4e71, #8e6a9f);
+            color: white;
+            padding: 12px 28px;
+            border-radius: 14px;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .btn:hover { opacity: 0.9; }
+        input, textarea {
+            background: rgba(20, 20, 20, 0.8);
+            color: #f2f2f2;
+            border: 2px solid rgba(142, 106, 159, 0.3);
+            border-radius: 14px;
+            padding: 14px;
+            width: 100%;
+            margin: 10px 0;
+        }
+        .row { display: flex; gap: 20px; }
+        .col { flex: 1; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="user-info">
+            Welcome, {user_name}!
+            <button class="btn" onclick="logout()" style="background: rgba(142, 106, 159, 0.3);">🚪 Logout</button>
+        </div>
+        
+        <div class="header">
+            <h1>📚 Adhyayan</h1>
+            <p style="color: #b0b0b0; font-size: 18px;">AI-Powered Research Paper Analyzer</p>
+        </div>
+
+        <div class="row">
+            <div class="col">
+                <div class="card">
+                    <h3>📤 Upload Documents</h3>
+                    <form action="/upload" method="post" enctype="multipart/form-data">
+                        <input type="file" name="files" multiple accept=".pdf">
+                        <button type="submit" class="btn">🚀 Ingest Documents</button>
+                    </form>
+                </div>
+            </div>
+            <div class="col">
+                <div class="card">
+                    <h3>📊 Document Library</h3>
+                    <div id="stats">{stats_html}</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3>💬 Ask Questions</h3>
+            <form action="/ask" method="post">
+                <textarea name="question" rows="3" placeholder="What is this paper about? What methodology was used?"></textarea>
+                <button type="submit" class="btn">🔍 Get Answer</button>
+            </form>
+        </div>
+
+        <div class="card">
+            <h3>💡 Answer</h3>
+            <div id="answer">{answer_html}</div>
+        </div>
+
+        <div class="card">
+            <h3>🔬 Related Research Papers</h3>
+            <div id="papers">{papers_html}</div>
+        </div>
+    </div>
+
+    <script>
+        function logout() {
+            document.cookie = "session_id=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+            window.location.href = "/";
+        }
+    </script>
+</body>
+</html>
+"""
+
+# Routes
+@app.get("/")
+async def home(request: Request):
+    session_id = get_session_id(request)
+    if session_id:
+        return RedirectResponse("/app")
     
-    if session_id not in uploaded_files_state:
-        uploaded_files_state[session_id] = []
-    if session_id not in doc_stats:
-        doc_stats[session_id] = {}
+    # Return login page HTML
+    return HTMLResponse("""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Adhyayan - Login</title>
+        <style>
+            body {
+                font-family: 'Inter', sans-serif;
+                background: linear-gradient(135deg, #0f0f0f 0%, #1a1a2e 100%);
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                height: 100vh;
+                margin: 0;
+                color: #f2f2f2;
+            }
+            .login-container {
+                background: rgba(30, 30, 30, 0.9);
+                padding: 50px;
+                border-radius: 20px;
+                box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+                text-align: center;
+                max-width: 400px;
+            }
+            h1 { color: #e6d8b9; font-size: 36px; margin-bottom: 10px; }
+            .login-btn {
+                background: linear-gradient(135deg, #6b4e71, #8e6a9f);
+                color: white;
+                padding: 15px 40px;
+                font-size: 18px;
+                border-radius: 12px;
+                text-decoration: none;
+                display: inline-block;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="login-container">
+            <h1>📚 Adhyayan</h1>
+            <p>Research Paper Analyzer</p>
+            <a href="/login" class="login-btn">🔐 Login with Google</a>
+        </div>
+    </body>
+    </html>
+    """)
+
+@app.get("/login")
+async def login():
+    login_url = get_google_login_url()
+    return RedirectResponse(login_url)
+
+@app.get("/callback")
+async def callback(request: Request, code: str = None):
+    if not code:
+        raise HTTPException(status_code=400, detail="No code provided")
     
-    info = "### 📚 Ingestion Complete\n\n"
-    for f in files:
-        path = save_uploaded_file(f)
+    user_info = verify_google_token(code)
+    if not user_info:
+        raise HTTPException(status_code=400, detail="Invalid token")
+    
+    session_id = str(uuid.uuid4())
+    sessions[session_id] = user_info
+    uploaded_files_state[session_id] = []
+    doc_stats[session_id] = {}
+    
+    response = RedirectResponse("/app")
+    response.set_cookie(key="session_id", value=session_id, httponly=True)
+    return response
+
+@app.get("/app")
+async def main_app(request: Request):
+    session_id = get_session_id(request)
+    if not session_id:
+        return RedirectResponse("/")
+    
+    user_info = sessions[session_id]
+    
+    # Generate stats HTML
+    stats_html = "No documents uploaded yet" if not uploaded_files_state.get(session_id) else f"{len(uploaded_files_state[session_id])} documents"
+    
+    html = MAIN_APP_HTML.format(
+        user_name=user_info.get('name', 'User'),
+        stats_html=stats_html,
+        answer_html="Your answer will appear here",
+        papers_html="Related papers will appear here"
+    )
+    
+    return HTMLResponse(html)
+
+@app.post("/upload")
+async def upload_files(request: Request, files: list[UploadFile] = File(...)):
+    session_id = get_session_id(request)
+    if not session_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    # Process files
+    for file in files:
+        path = save_uploaded_file(file)
         n, pages, doc_summary, pdf_name = ingest_pdf(path)
         col_name = os.path.splitext(os.path.basename(path))[0]
         uploaded_files_state[session_id].append(col_name)
         doc_stats[session_id][col_name] = {"pages": pages, "chunks": n, "pdf": pdf_name}
-
-        info += f"""
-<div style="background: linear-gradient(135deg, rgba(107, 78, 113, 0.2), rgba(142, 106, 159, 0.2)); 
-            padding: 15px; border-radius: 12px; margin: 10px 0; border-left: 4px solid #8e6a9f;">
-    <h4 style="margin: 0 0 8px 0; color: #e6d8b9;">📄 {col_name}</h4>
-    <p style="margin: 5px 0; color: #d0d0d0;">✅ {n} chunks extracted from {pages} pages</p>
-</div>
-"""
-    return info, format_stats()
-
-def format_stats():
-    session_id = get_session_id()
-    if session_id not in doc_stats or not doc_stats[session_id]:
-        return """
-<div style="text-align: center; padding: 40px; color: #b0b0b0;">
-    <p style="font-size: 18px;">📂 No documents uploaded yet</p>
-    <p style="font-size: 14px; margin-top: 10px;">Upload PDFs to get started</p>
-</div>
-"""
-    txt = """
-<div style="background: linear-gradient(135deg, rgba(15, 15, 15, 0.8), rgba(26, 26, 46, 0.8)); 
-            padding: 20px; border-radius: 16px; border: 1px solid rgba(142, 106, 159, 0.3);">
-    <h3 style="color: #e6d8b9; margin-bottom: 20px; font-size: 20px;">📊 Document Library</h3>
-"""
-    for name, st in doc_stats[session_id].items():
-        txt += f"""
-<div style="background: rgba(30, 30, 30, 0.6); padding: 15px; border-radius: 12px; margin: 10px 0;">
-    <h4 style="color: #8e6a9f; margin: 0 0 10px 0;">{name}</h4>
-    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
-        <div style="background: rgba(142, 106, 159, 0.1); padding: 8px; border-radius: 8px; text-align: center;">
-            <div style="color: #e6d8b9; font-size: 24px; font-weight: bold;">{st['pages']}</div>
-            <div style="color: #b0b0b0; font-size: 12px;">Pages</div>
-        </div>
-        <div style="background: rgba(142, 106, 159, 0.1); padding: 8px; border-radius: 8px; text-align: center;">
-            <div style="color: #e6d8b9; font-size: 24px; font-weight: bold;">{st['chunks']}</div>
-            <div style="color: #b0b0b0; font-size: 12px;">Chunks</div>
-        </div>
-        <div style="background: rgba(142, 106, 159, 0.1); padding: 8px; border-radius: 8px; text-align: center;">
-            <div style="color: #8e6a9f; font-size: 20px;">✓</div>
-            <div style="color: #b0b0b0; font-size: 12px;">Ready</div>
-        </div>
-    </div>
-</div>
-"""
-    txt += "</div>"
-    return txt
-
-def ask_question(question):
-    session_id = get_session_id()
-    if session_id not in uploaded_files_state or not uploaded_files_state[session_id]:
-        return """
-<div style="background: rgba(180, 50, 50, 0.2); padding: 20px; border-radius: 12px; border-left: 4px solid #ff6b6b;">
-    <h4>⚠️ No Documents Uploaded</h4>
-    <p>Please upload PDF documents first.</p>
-</div>
-""", ""
     
-    col = uploaded_files_state[session_id][0]
-    chunks = retrieve_chunks(question, col)
-    ans = answer_with_context(question, chunks)
+    return RedirectResponse("/app")
+
+@app.post("/ask")
+async def ask_question(request: Request, question: str = Form(...)):
+    session_id = get_session_id(request)
+    if not session_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
     
-    formatted_answer = f"""
-<div style="background: linear-gradient(135deg, rgba(30, 30, 30, 0.9), rgba(26, 26, 46, 0.9)); 
-            padding: 25px; border-radius: 16px; border: 1px solid rgba(142, 106, 159, 0.4);">
-    <h3 style="color: #e6d8b9; margin-bottom: 15px;">💡 Answer</h3>
-    <div style="color: #f2f2f2; line-height: 1.8;">{ans}</div>
-</div>
-"""
+    # Process question
+    if not uploaded_files_state.get(session_id):
+        answer = "Please upload documents first"
+        papers = []
+    else:
+        col = uploaded_files_state[session_id][0]
+        chunks = retrieve_chunks(question, col)
+        answer = answer_with_context(question, chunks)
+        topic = doc_stats[session_id][col]["pdf"]
+        papers = search_papers(topic)
     
-    topic = doc_stats[session_id][col]["pdf"]
-    papers = search_papers(topic)
-    pretty = """
-<div style="background: linear-gradient(135deg, rgba(15, 15, 15, 0.9), rgba(26, 26, 46, 0.9)); 
-            padding: 25px; border-radius: 16px; border: 1px solid rgba(142, 106, 159, 0.3);">
-    <h3 style="color: #e6d8b9; margin-bottom: 20px;">🔬 Related Research Papers</h3>
-"""
+    user_info = sessions[session_id]
+    stats_html = "No documents uploaded yet" if not uploaded_files_state.get(session_id) else f"{len(uploaded_files_state[session_id])} documents"
+    
+    # Format answer and papers
+    answer_html = f"<div style='color: #f2f2f2;'>{answer}</div>"
+    
+    papers_html = ""
     if papers:
         for i, p in enumerate(papers):
-            summary = p.get('summary') or "No abstract available"
-            summary_preview = summary[:300] + "..." if len(summary) > 300 else summary
-            pretty += f"""
-<div style="background: rgba(30, 30, 30, 0.7); padding: 20px; border-radius: 12px; margin: 15px 0; border-left: 4px solid #8e6a9f;">
-    <h4 style="color: #e6d8b9; margin: 0 0 12px 0;">{i+1}. {p['title']}</h4>
-    <a href="{p['link']}" target="_blank" style="color: #a784c0; text-decoration: none;">🔗 View Paper →</a>
-    <p style="color: #d0d0d0; line-height: 1.6; margin: 10px 0 0 0;">{summary_preview}</p>
-</div>
-"""
+            papers_html += f"""
+            <div style='background: rgba(30, 30, 30, 0.7); padding: 15px; border-radius: 12px; margin: 10px 0;'>
+                <h4 style='color: #e6d8b9;'>{i+1}. {p['title']}</h4>
+                <a href="{p['link']}" target="_blank" style='color: #a784c0;'>View Paper →</a>
+                <p style='color: #d0d0d0;'>{p['summary'][:200]}...</p>
+            </div>
+            """
     else:
-        pretty += '<p style="color: #b0b0b0; text-align: center;">No related papers found.</p>'
-    pretty += "</div>"
-    return formatted_answer, pretty
-
-def create_main_interface():
-    css = """
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;900&display=swap');
-    * { font-family: 'Inter', sans-serif; }
-    body, .gradio-container { background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%) !important; color: #f2f2f2; }
-    .card { background: rgba(30, 30, 30, 0.8) !important; padding: 25px !important; border-radius: 20px !important; border: 1px solid rgba(142, 106, 159, 0.3) !important; }
-    button { background: linear-gradient(135deg, #6b4e71 0%, #8e6a9f 100%) !important; color: #fff !important; border-radius: 14px !important; border: none !important; padding: 12px 28px !important; }
-    """
+        papers_html = "<p>No related papers found.</p>"
     
-    with gr.Blocks(css=css) as interface:
-        gr.Markdown(
-            """
-            <div style="text-align: center; padding: 20px 0;">
-                <h1 style="color: #e6d8b9; font-size: 42px; margin-bottom: 10px;">📚 Adhyayan</h1>
-                <p style="color: #b0b0b0; font-size: 18px;">AI-Powered Research Paper Analyzer</p>
-            </div>
-            """
-        )
-        
-        gr.Markdown(
-            """
-            <div style="background: rgba(142, 106, 159, 0.2); padding: 16px 24px; border-radius: 14px; border-left: 4px solid #8e6a9f; margin: 20px 0;">
-                💡 <strong>Pro Tip:</strong> Upload research papers in PDF format, then ask questions!
-            </div>
-            """
-        )
-        
-        with gr.Row():
-            with gr.Column(scale=1, elem_classes="card"):
-                gr.Markdown("### 📤 Upload Documents")
-                file_input = gr.File(file_types=[".pdf"], file_count="multiple", label="Select PDF Files")
-                upload_btn = gr.Button("🚀 Ingest Documents", variant="primary")
-                ingest_output = gr.Markdown("")
-            
-            with gr.Column(scale=1, elem_classes="card"):
-                gr.Markdown("### 📊 Document Library")
-                stats_box = gr.Markdown("""<div style="text-align: center; padding: 40px; color: #b0b0b0;"><p>📂 No documents yet</p></div>""")
-        
-        with gr.Column(elem_classes="card"):
-            gr.Markdown("### 💬 Ask Questions")
-            question = gr.Textbox(placeholder="What is this paper about? What methodology was used?", lines=2)
-            ask_btn = gr.Button("🔍 Get Answer", variant="primary")
-        
-        with gr.Column(elem_classes="card"):
-            answer_output = gr.Markdown("""<div style="text-align: center; padding: 40px; color: #b0b0b0;"><p>Your answer will appear here</p></div>""")
-        
-        with gr.Column(elem_classes="card"):
-            related_output = gr.Markdown("")
-        
-        upload_btn.click(ingest_files, [file_input], [ingest_output, stats_box])
-        ask_btn.click(ask_question, [question], [answer_output, related_output])
+    html = MAIN_APP_HTML.format(
+        user_name=user_info.get('name', 'User'),
+        stats_html=stats_html,
+        answer_html=answer_html,
+        papers_html=papers_html
+    )
     
-    return interface
+    return HTMLResponse(html)
 
-def create_app():
-    with gr.Blocks(title="Adhyayan", theme=gr.themes.Soft()) as app:
-        is_authenticated = gr.State(value=False)
-        
-        with gr.Column(visible=True) as login_col:
-            gr.Markdown(
-                """
-                <div style="text-align: center; padding: 40px 20px;">
-                    <h1 style="color: #e6d8b9; font-size: 48px; margin-bottom: 10px;">📚 Adhyayan</h1>
-                    <p style="color: #b0b0b0; font-size: 20px; margin-bottom: 40px;">AI-Powered Research Paper Analyzer</p>
-                    <div style="max-width: 500px; margin: 0 auto; text-align: left;">
-                        <div style="background: rgba(142, 106, 159, 0.1); padding: 20px; border-radius: 12px;">
-                            <h3 style="color: #e6d8b9;">✨ Features</h3>
-                            <ul style="color: #d0d0d0; line-height: 1.8;">
-                                <li>Upload and analyze research papers</li>
-                                <li>AI-powered Q&A with your documents</li>
-                                <li>Discover related research papers</li>
-                                <li>Semantic search across your library</li>
-                            </ul>
-                        </div>
-                    </div>
-                </div>
-                """
-            )
-            login_btn = gr.Button("🔐 Login with Google", size="lg")
-            login_status = gr.Markdown()
-        
-        with gr.Column(visible=False) as app_col:
-            main_interface = create_main_interface()
-            logout_btn = gr.Button("🚪 Logout", size="sm", variant="secondary")
-        
-        def handle_login():
-            login_url = get_google_login_url()
-            return (
-                gr.update(visible=True),
-                gr.update(visible=False),
-                f"""
-                <div style='text-align: center; padding: 20px; background: rgba(142, 106, 159, 0.1); border-radius: 12px;'>
-                    <p>🔗 <a href='{login_url}' target='_blank' style='color: #a784c0;'>Click here to login with Google</a></p>
-                </div>
-                """
-            )
-        
-        def handle_logout():
-            return (
-                gr.update(visible=True),
-                gr.update(visible=False),
-                "Logged out successfully!"
-            )
-        
-        def check_url_for_auth(url):
-            if "code=" in url:
-                code = url.split("code=")[1].split("&")[0]
-                user_info = verify_google_token(code)
-                if user_info:
-                    return (
-                        gr.update(visible=False),
-                        gr.update(visible=True),
-                        f"Welcome, {user_info.get('name', 'User')}! ✅"
-                    )
-            return gr.update(), gr.update(), ""
-        
-        login_btn.click(handle_login, outputs=[login_col, app_col, login_status])
-        logout_btn.click(handle_logout, outputs=[login_col, app_col, login_status])
-        app.load(check_url_for_auth, inputs=gr.URL(), outputs=[login_col, app_col, login_status])
+@app.get("/logout")
+async def logout(request: Request):
+    session_id = get_session_id(request)
+    if session_id:
+        sessions.pop(session_id, None)
+        uploaded_files_state.pop(session_id, None)
+        doc_stats.pop(session_id, None)
     
-    return app
+    response = RedirectResponse("/")
+    response.delete_cookie("session_id")
+    return response
 
-# CRITICAL FOR RENDER: Use the PORT environment variable
 if __name__ == "__main__":
-    app = create_app()
-    app.launch(
-        server_name="0.0.0.0",
-        server_port=PORT,
-        share=False,
-        debug=False
+    uvicorn.run(
+        "app:app",
+        host="0.0.0.0",
+        port=PORT,
+        reload=False
     )
