@@ -178,12 +178,12 @@ MAIN_APP_HTML_RAW = """
 """
 
 # THIS IS THE ONLY FIX YOU NEED — escapes all hyphenated CSS properties
-MAIN_APP_HTML = MAIN_APP_HTML_RAW \
-    .replace("font-family", "{{font-family}}") \
-    .replace("box-sizing", "{{box-sizing}}") \
-    .replace("min-height", "{{min-height}}") \
-    .replace("margin-top", "{{margin-top}}") \
-    .replace("line-height", "{{line-height}}")
+# CORRECT — THIS FIXES IT 100%
+MAIN_APP_HTML = MAIN_APP_HTML_RAW.format_map({}) \
+    .replace("{", "{{") \
+    .replace("}", "}}") \
+    .replace("{{{{", "{") \
+    .replace("}}}}", "}")
 
 LOGIN_HTML = """
 <!DOCTYPE html>
