@@ -1,6 +1,7 @@
 # paper_search.py - Ultra lightweight version (no embeddings, no sentence-transformers)
 import re
 from langchain_groq import ChatGroq
+import os
 MODEL = "llama-3.1-8b-instant"
 llm = ChatGroq(
         model=MODEL,
