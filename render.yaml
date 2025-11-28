@@ -1,20 +1,19 @@
 services:
   - type: web
-    name: adhyayan
+    name: adhyayan-research
     env: python
-    region: oregon
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT --workers 1
     plan: free
-    branch: main
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "python app.py"
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
       - key: GROQ_API_KEY
         sync: false
       - key: GOOGLE_CLIENT_ID
         sync: false
       - key: GOOGLE_CLIENT_SECRET
         sync: false
-      - key: FLASK_SECRET_KEY
+      - key: RENDER_EXTERNAL_URL
         sync: false
-      - key: PYTHON_VERSION
-        value: 3.11.0
+        
